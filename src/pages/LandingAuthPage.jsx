@@ -403,7 +403,11 @@ function AuthHub({ onSignUpSuccess, onSignInSuccess, onGoToOtp }) {
           Verify here
         </button>
       </p>
-    </div>// --- OTP VERIFY COMPONENT ---
+    </div>
+  );
+}
+
+// --- OTP VERIFY COMPONENT ---
 const OTP_LENGTH = 6;
 function OtpVerify({ email, onVerify, onBack, onResend }) {
   const [digits, setDigits] = useState(Array(OTP_LENGTH).fill(""));
