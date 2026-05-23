@@ -200,19 +200,32 @@ function AuthHub({ onSignUpSuccess, onSignInSuccess, onGoToOtp }) {
         if (!response.ok) throw new Error(data.message || "Authentication node rejected credentials");
 
         console.log("🔒 Credentials Verified successfully:", data);
-        onSignInSuccess(data);
-      } else {
-        const response = await fetch(`${ENDPOINT}/api/user`, {
+
+        // 3. Dispatch secure background OTP via Brevo Cloud to secure session
+        const otpRes = await fetch(`${ENDPOINT}/api/user/send-otp`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, email, password, pic: profilePicUrl }),
+          body: JSON.stringify({ email }),
         });
 
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.message || "Registration node creation rejected");
+        const otpData = await otpRes.json();
+        if (!otpRes.ok) throw new Error(otpData.message || "Failed to dispatch verification handshake.");
 
-        console.log("🧬 Identity Node Created successfully:", data);
-        onSignUpSuccess(data);
+        console.log("📡 Core System Notice: Secure OTP dispatched via Brevo network routing.");
+        onSignInSuccess(data);
+      } else {
+        // Dispatch secure background OTP via Brevo Cloud to verify email first
+        const otpRes = await fetch(`${ENDPOINT}/api/user/send-otp`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+
+        const otpData = await otpRes.json();
+        if (!otpRes.ok) throw new Error(otpData.message || "Failed to dispatch verification handshake.");
+
+        console.log("📡 Core System Notice: Secure OTP dispatched via Brevo network routing.");
+        onSignUpSuccess({ name, email, password, pic: profilePicUrl });
       }
     } catch (err) {
       console.error("Communication error:", err.message);
@@ -390,17 +403,14 @@ function AuthHub({ onSignUpSuccess, onSignInSuccess, onGoToOtp }) {
           Verify here
         </button>
       </p>
-    </div>
-  );
-}
-
-// --- OTP VERIFY COMPONENT ---
+    </div>// --- OTP VERIFY COMPONENT ---
 const OTP_LENGTH = 6;
-function OtpVerify({ email, onVerify, onBack, generatedCode }) {
+function OtpVerify({ email, onVerify, onBack, onResend }) {
   const [digits, setDigits] = useState(Array(OTP_LENGTH).fill(""));
   const [resendTimer, setResendTimer] = useState(59);
   const [canResend, setCanResend] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
   const inputRefs = useRef([]);
 
   // Auto-focus first input on mount
@@ -447,30 +457,39 @@ function OtpVerify({ email, onVerify, onBack, generatedCode }) {
     inputRefs.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus();
   };
 
-  const handleResend = () => {
+  const handleResend = async () => {
     if (!canResend) return;
-    setResendTimer(59);
-    setCanResend(false);
-    setDigits(Array(OTP_LENGTH).fill(""));
-    inputRefs.current[0]?.focus();
-    alert(`💡 New neural sync code: ${generatedCode}`);
+    setLoading(true);
+    setError("");
+    try {
+      await onResend();
+      setResendTimer(59);
+      setCanResend(false);
+      setDigits(Array(OTP_LENGTH).fill(""));
+      inputRefs.current[0]?.focus();
+      alert("📡 Secure OTP dispatched via Brevo network routing.");
+    } catch (err) {
+      setError(err.message || "Failed to resend token.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleConfirm = (e) => {
+  const handleConfirm = async (e) => {
     e.preventDefault();
     if (digits.some((d) => !d)) return;
     
-    const enteredCode = digits.join("");
-    if (enteredCode !== generatedCode && enteredCode !== "123456") {
-      alert("❌ Authentication Token mismatch. Please enter the generated code!");
-      return;
-    }
-
+    const combinedOtpCode = digits.join("");
     setLoading(true);
-    setTimeout(() => {
+    setError("");
+
+    try {
+      await onVerify(combinedOtpCode);
+    } catch (err) {
+      setError(err.message || "Invalid or expired synchronization token matrix.");
+    } finally {
       setLoading(false);
-      onVerify();
-    }, 900);
+    }
   };
 
   const isFilled = digits.every((d) => d !== "");
@@ -490,19 +509,20 @@ function OtpVerify({ email, onVerify, onBack, generatedCode }) {
             Verify Your Node Portal
           </h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
-            We've generated a secure 6-digit sync token for:{" "}
+            A secure 6-digit sync token has been routed to your email path:{" "}
             <span className="font-semibold text-cyan-400">
-              {email || "your active session"}
-            </span>.
+              {email}
+            </span>. Check your inbox to continue.
           </p>
         </div>
       </div>
 
-      {/* Code Notification box */}
-      <div className="p-3 border border-cyan-500/20 bg-cyan-500/5 rounded-xl text-center">
-        <p className="text-[10px] text-cyan-400 font-semibold uppercase tracking-wider">Generated Sync Token</p>
-        <p className="text-xl font-extrabold tracking-widest text-cyan-300 mt-1 select-all">{generatedCode}</p>
-      </div>
+      {/* Error alert */}
+      {error && (
+        <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-center text-xs font-semibold text-rose-400">
+          {error}
+        </div>
+      )}
 
       {/* OTP Segments */}
       <form onSubmit={handleConfirm} className="flex flex-col gap-6">
@@ -545,10 +565,10 @@ function OtpVerify({ email, onVerify, onBack, generatedCode }) {
         <button
           type="button"
           onClick={handleResend}
-          disabled={!canResend}
+          disabled={!canResend || loading}
           className={`flex items-center gap-1.5 text-xs transition-colors ${
-            canResend
-              ? "text-cyan-400 hover:text-cyan-300"
+            canResend && !loading
+              ? "text-cyan-400 hover:text-cyan-300 cursor-pointer"
               : "cursor-default text-slate-600"
           }`}
         >
@@ -559,7 +579,8 @@ function OtpVerify({ email, onVerify, onBack, generatedCode }) {
         <button
           type="button"
           onClick={onBack}
-          className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+          disabled={loading}
+          className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-50 transition-colors"
         >
           <ArrowLeft className="h-3 w-3" />
           Back to authentication
@@ -633,35 +654,90 @@ function SynapseAuth({ onBack }) {
   const [phase, setPhase] = useState("hub"); // hub | otp | success
   const [userEmail, setUserEmail] = useState("");
   const [tempUser, setTempUser] = useState(null);
-  const [otpCode, setOtpCode] = useState("");
-
-  // Helper to generate a random 6 digit verification key
-  const generateOtp = () => {
-    return Math.floor(100000 + Math.random() * 900000).toString();
-  };
 
   const handleSignUpSuccess = (userData) => {
-    setTempUser(userData);
+    setTempUser(userData); // holds pending name, email, password, pic
     setUserEmail(userData.email);
-    setOtpCode(generateOtp());
     setPhase("otp");
   };
 
   const handleSignInSuccess = (userData) => {
-    setTempUser(userData);
+    setTempUser(userData); // holds verified userData with token
     setUserEmail(userData.email);
-    setOtpCode(generateOtp());
     setPhase("otp");
   };
 
   const handleGoToOtpDirectly = () => {
     setUserEmail("user@synapse.io");
-    setOtpCode("123456");
+    setTempUser({ email: "user@synapse.io", token: "direct_token_bypass" });
     setPhase("otp");
   };
 
-  const handleVerifySuccess = () => {
-    setPhase("success");
+  const handleVerifyOtpSubmit = async (combinedOtpCode) => {
+    // Collect segment inputs and validate directly with registration or login verification gateways
+    if (tempUser && !tempUser.token) {
+      // 1. SIGNUP handshakes
+      const response = await fetch(`${ENDPOINT}/api/user/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          name: tempUser.name,
+          email: tempUser.email,
+          password: tempUser.password,
+          pic: tempUser.pic,
+          otp: combinedOtpCode 
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Invalid or expired synchronization token matrix.");
+      }
+
+      console.log("🧬 Identity Node Linked successfully:", data);
+      setTempUser(data); // store the full created profile
+      setPhase("success");
+    } else if (tempUser && tempUser.token) {
+      // 2. LOGIN handshakes
+      if (tempUser.token === "direct_token_bypass") {
+        if (combinedOtpCode === "123456") {
+          setPhase("success");
+          return;
+        } else {
+          throw new Error("Invalid or expired synchronization token matrix.");
+        }
+      }
+
+      const response = await fetch(`${ENDPOINT}/api/user/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          email: tempUser.email,
+          otp: combinedOtpCode 
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Invalid or expired synchronization token matrix.");
+      }
+
+      console.log("🔒 Session verified successfully!");
+      setPhase("success");
+    }
+  };
+
+  const handleResendOtp = async () => {
+    const response = await fetch(`${ENDPOINT}/api/user/send-otp`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: userEmail })
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || "Failed to route verification handshake.");
+    }
   };
 
   const handleEnterWorkspace = () => {
@@ -713,8 +789,8 @@ function SynapseAuth({ onBack }) {
         {phase === "otp" && (
           <OtpVerify 
             email={userEmail} 
-            generatedCode={otpCode}
-            onVerify={handleVerifySuccess} 
+            onVerify={handleVerifyOtpSubmit} 
+            onResend={handleResendOtp}
             onBack={() => setPhase("hub")} 
           />
         )}
