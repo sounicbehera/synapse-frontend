@@ -1,6 +1,12 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 
 const ScrollableChat = ({ messages, loggedInUser }) => {
+    const messagesEndRef = useRef(null);
+
+    useEffect(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [messages]);
+
     // A. Validate top-level data models cleanly
     if (!messages || !loggedInUser) return null;
 
@@ -48,6 +54,7 @@ const ScrollableChat = ({ messages, loggedInUser }) => {
                     </div>
                 );
             })}
+            <div ref={messagesEndRef} />
         </div>
     );
 };
