@@ -11,7 +11,7 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Gateway Entry Point */}
+        {/* Gateways Entry Point */}
         <Route 
           path="/" 
           element={isAuthenticated() ? <Navigate to="/chats" /> : <LandingAuthPage />} 
