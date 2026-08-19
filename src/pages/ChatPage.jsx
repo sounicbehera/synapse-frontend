@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MessageSquare, LogOut, Search, Send, Loader2, ArrowLeft, X, User } from 'lucide-react';
+import { MessageSquare, LogOut, Search, Send, Loader2 } from 'lucide-react';
 import io from 'socket.io-client'; // 1. Import Socket Client
 import UserListItem from '../components/UserListItem';
 import ScrollableChat from '../components/ScrollableChat';
 
 // Point this to your backend server URL
-const ENDPOINT = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+const ENDPOINT = "http://localhost:5000";
 let socket;
 
 const ChatPage = () => {
@@ -19,7 +19,6 @@ const ChatPage = () => {
   const [newMessage, setNewMessage] = useState("");
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
-  const [isProfileSheetOpen, setIsProfileSheetOpen] = useState(false);
 
   // Keep a mutable reference of selectedChat available inside the socket listener
   const selectedChatRef = useRef(selectedChat);
@@ -39,17 +38,30 @@ const ChatPage = () => {
   }, []); // Must remain an empty array dependency!
 
   // --- SOCKET LISTENER FOR INCOMING REAL-TIME PACKETS ---
+  // --- SOCKET LISTENER FOR INCOMING REAL-TIME PACKETS ---
   useEffect(() => {
     if (!socket) return;
+
     socket.on("message received", (newMessageReceived) => {
       if (!newMessageReceived || !newMessageReceived.chat) return;
+
+      // 1. Safely extract the Chat ID target string without losing pointer references
       const incomingChatId = newMessageReceived.chat._id || newMessageReceived.chat;
+
+      // 2. ONLY append the message if it belongs to the currently active visual chat window
       if (selectedChatRef.current && selectedChatRef.current._id === incomingChatId) {
         setMessages((prevMessages) => [...prevMessages, newMessageReceived]);
       }
+
+      // 3. Move the chat thread to the top of the sidebar list
       moveChatToTop(newMessageReceived.chat);
+
+      // ⚠️ DO NOT PUT ANY LOCALSTORAGE.SETITEM CALLS IN THIS BLOCK!
     });
-    return () => socket.off("message received");
+
+    return () => {
+      socket.off("message received");
+    };
   }, []);
 
   // Helper function to shift a chat item to the top of the sidebar array
@@ -70,7 +82,7 @@ const ChatPage = () => {
   // --- FETCH ACTIVE CHATS FOR THE SIDEBAR ---
   const fetchChats = async (currentUser) => {
     try {
-      const res = await fetch(`${ENDPOINT}/api/chat`, {
+      const res = await fetch("http://localhost:5000/api/chat", {
         method: "GET",
         headers: { Authorization: `Bearer ${currentUser.token}` },
       });
@@ -91,7 +103,7 @@ const ChatPage = () => {
 
     try {
       setSearchLoading(true);
-      const res = await fetch(`${ENDPOINT}/api/user?search=${search}`, {
+      const res = await fetch(`http://localhost:5000/api/user?search=${search}`, {
         method: "GET",
         headers: { Authorization: `Bearer ${user.token}` },
       });
@@ -107,7 +119,7 @@ const ChatPage = () => {
 
   const accessChatRoom = async (userId) => {
     try {
-      const res = await fetch(`${ENDPOINT}/api/chat`, {
+      const res = await fetch("http://localhost:5000/api/chat", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -134,7 +146,7 @@ const ChatPage = () => {
 
     try {
       setMessagesLoading(true);
-      const res = await fetch(`${ENDPOINT}/api/message/${selectedChat._id}`, {
+      const res = await fetch(`http://localhost:5000/api/message/${selectedChat._id}`, {
         method: "GET",
         headers: { Authorization: `Bearer ${user.token}` },
       });
@@ -164,7 +176,7 @@ const ChatPage = () => {
       const messageContent = newMessage;
       setNewMessage("");
 
-      const res = await fetch(`${ENDPOINT}/api/message`, {
+      const res = await fetch("http://localhost:5000/api/message", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -195,7 +207,7 @@ const ChatPage = () => {
     <div className="h-screen w-screen flex bg-slate-950 text-slate-100 overflow-hidden">
 
       {/* PANEL 1: MINI NAV BAR */}
-      <div className={`${selectedChat ? "hidden" : "flex"} md:flex w-16 bg-slate-900 border-r border-slate-800/60 flex-col items-center justify-between py-6`}>
+      <div className="w-16 bg-slate-900 border-r border-slate-800/60 flex flex-col items-center justify-between py-6">
         <div className="flex flex-col items-center gap-6">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-tr from-cyan-500 to-blue-600 flex items-center justify-center font-bold shadow-md shadow-cyan-500/20">
             S
@@ -205,29 +217,26 @@ const ChatPage = () => {
           </button>
         </div>
 
-        {/* PANEL 1: MINI NAV BAR - USER PROFILE TARGET */}
         <div className="flex flex-col items-center gap-4">
-          <img 
-            src={
-              user?.pic 
-                ? user.pic.replace("http://", "https://") 
-                : "https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jpg"
-            } 
-            alt="Logged In User Private Avatar" 
-            onClick={() => setIsProfileSheetOpen(true)}
-            className="h-9 w-9 rounded-full border border-slate-700 object-cover shadow-sm shadow-cyan-500/10 cursor-pointer hover:border-cyan-500/50 transition-all"
-          />
-          <button 
-            onClick={handleLogout} 
-            className="p-3 text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all"
-          >
+          <div className="h-10 w-10 rounded-full bg-slate-800 border border-slate-700/60 overflow-hidden">
+            <img
+              src={
+                selectedChat?.isGroupChat
+                  ? "https://icon-library.com/images/group-icon/group-icon-10.jpg"
+                  : selectedChat?.users?.find(u => u._id !== user?._id)?.pic?.replace("http://", "https://") || "https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jpg"
+              }
+              className="w-full h-full object-cover"
+              alt="Chat Target"
+            />
+          </div>
+          <button onClick={handleLogout} className="p-3 text-rose-400 hover:bg-rose-500/10 rounded-xl transition-all">
             <LogOut size={20} />
           </button>
         </div>
       </div>
 
       {/* PANEL 2: LATERAL CHAT ROOM INDEX */}
-      <div className={`${selectedChat ? "hidden" : "flex"} md:flex flex-1 md:flex-none md:w-80 bg-slate-900/40 border-r border-slate-800/60 flex-col`}>
+      <div className="w-80 bg-slate-900/40 border-r border-slate-800/60 flex flex-col">
         <div className="p-4 border-b border-slate-800/40">
           <h2 className="text-xl font-bold tracking-tight mb-4">Synapses</h2>
 
@@ -301,19 +310,11 @@ const ChatPage = () => {
       </div>
 
       {/* PANEL 3: CHAT HUB WINDOW VIEWPORT */}
-      <div className={`${!selectedChat ? "hidden" : "flex"} md:flex flex-1 flex-col bg-slate-950`}>
+      <div className="flex-1 flex flex-col bg-slate-950">
         {selectedChat ? (
           <>
             <div className="h-16 border-b border-slate-800/40 flex items-center justify-between px-6 bg-slate-900/20">
               <div className="flex items-center gap-3">
-                {/* MOBILE BACK ACTION LINK BUTTON */}
-                <button 
-                  onClick={() => setSelectedChat(null)} 
-                  className="block md:hidden mr-3 p-1 text-slate-400 hover:text-white rounded-full hover:bg-slate-800 transition-all"
-                >
-                  <ArrowLeft size={22} />
-                </button>
-                
                 <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
                   <img
                     src={selectedChat.isGroupChat ? "https://icon-library.com/images/group-icon/group-icon-10.jpg" : selectedChat.users?.find(u => u._id !== user?._id)?.pic}
@@ -368,50 +369,6 @@ const ChatPage = () => {
           </div>
         )}
       </div>
-
-      {/* USER ACCOUNT METADATA DRAWER MODAL OVERLAY */}
-      {isProfileSheetOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="w-[90%] max-w-sm bg-neutral-900 border border-slate-800 p-6 rounded-2xl shadow-2xl shadow-cyan-500/5 text-slate-200 relative">
-            
-            {/* Close Window Vector Trigger */}
-            <button 
-              onClick={() => setIsProfileSheetOpen(false)} 
-              className="absolute top-4 right-4 text-slate-400 hover:text-white transition-colors"
-            >
-              <X size={20} />
-            </button>
-
-            <h3 className="text-lg font-semibold text-cyan-400 mb-6 flex items-center gap-2">
-              <User size={18} /> Synapse Profile Node
-            </h3>
-
-            <div className="flex flex-col items-center gap-4">
-              <img 
-                src={
-                  user?.pic 
-                    ? user.pic.replace("http://", "https://") 
-                    : "https://icon-library.com/images/anonymous-avatar-icon/anonymous-avatar-icon-25.jpg"
-                } 
-                alt="Active Operator" 
-                className="h-20 w-20 rounded-full border-2 border-cyan-500/20 object-cover"
-              />
-              
-              <div className="w-full space-y-3 mt-2">
-                <div className="bg-neutral-950/50 border border-slate-800/60 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Identity Identifier</span>
-                  <span className="text-sm font-medium text-slate-200">{user?.name}</span>
-                </div>
-                
-                <div className="bg-neutral-950/50 border border-slate-800/60 rounded-xl p-3">
-                  <span className="text-[10px] text-slate-500 uppercase tracking-wider block">Communications Route</span>
-                  <span className="text-sm font-medium text-slate-300 break-all">{user?.email}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );
